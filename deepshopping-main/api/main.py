@@ -6,6 +6,7 @@ import paramiko
 import posixpath
 import httpx
 import base64
+from io import BytesIO
 
 # Add the project root to Python path
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -250,84 +251,61 @@ async def try_on(request: TryOnRequest):
         # 1. Download the image from the URL
         async with httpx.AsyncClient() as client:
             response = await client.get(request.image_url)
-            response.raise_for_status()  # Raise an exception for bad status codes
-            image_data = response.content
+            response.raise_for_status()
+            image_bytes = response.content
 
-        # 2. Get remote server credentials from environment
+        # 2. Upload to remote server
         remote_host = os.getenv("REMOTE_SERVER_HOST")
         remote_port = int(os.getenv("REMOTE_SERVER_PORT", 22))
         remote_user = os.getenv("REMOTE_SERVER_USER")
         remote_pass = os.getenv("REMOTE_SERVER_PASS")
-        remote_image_path = os.getenv("REMOTE_SERVER_DEST_PATH") # Path for images
-        remote_script_path = os.getenv("REMOTE_SCRIPT_PATH") # Path to catvton_workflow_runner.py
-        remote_output_dir = os.getenv("REMOTE_OUTPUT_DIR") # Path where results are saved
+        remote_path = os.getenv("REMOTE_SERVER_DEST_PATH")
+        remote_script_path = os.getenv("REMOTE_SCRIPT_PATH")
 
-        if not all([remote_host, remote_user, remote_pass, remote_image_path, remote_script_path, remote_output_dir]):
-            raise HTTPException(status_code=500, detail="Remote server configuration is incomplete in .env file. Check REMOTE_OUTPUT_DIR.")
+        if not all([remote_host, remote_user, remote_pass, remote_path, remote_script_path]):
+            raise HTTPException(status_code=500, detail="Remote server try-on configuration is missing.")
 
-        # 3. Connect and upload the image, then execute the script
-        with paramiko.SSHClient() as ssh_client:
-            ssh_client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-            ssh_client.connect(hostname=remote_host, port=remote_port, username=remote_user, password=remote_pass)
+        ssh_client = paramiko.SSHClient()
+        ssh_client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        ssh_client.connect(hostname=remote_host, port=remote_port, username=remote_user, password=remote_pass)
 
-            # Upload the image as top.jpg
-            with ssh_client.open_sftp() as sftp_client:
-                remote_file_path = posixpath.join(remote_image_path, "top.jpg")
-                with sftp_client.file(remote_file_path, "wb") as f:
-                    f.write(image_data)
-                print(f"Successfully uploaded image to {remote_host}:{remote_file_path}")
+        # Upload the image
+        sftp_client = ssh_client.open_sftp()
+        remote_image_path = posixpath.join(remote_path, "garment.jpg")
+        sftp_client.putfo(BytesIO(image_bytes), remote_image_path)
+        sftp_client.close()
 
-            # Construct full paths for script arguments
-            model_image_full_path = posixpath.join(remote_image_path, "model.jpg")
-            top_image_full_path = posixpath.join(remote_image_path, "top.jpg")
+        # Run the try-on script
+        stdin, stdout, stderr = ssh_client.exec_command(f"python3 {remote_script_path}")
+        
+        # Wait for the command to complete
+        exit_status = stdout.channel.recv_exit_status()
+        
+        ssh_client.close()
 
-            # Execute the script with full paths as arguments, without extra quotes
-            command = f"python3 {remote_script_path} --model-image {model_image_full_path} --top-image {top_image_full_path}"
-            print(f"Executing command: {command}")
-            stdin, stdout, stderr = ssh_client.exec_command(command)
-            
-            exit_status = stdout.channel.recv_exit_status()
-            stdout_output = stdout.read().decode('utf-8')
-            stderr_output = stderr.read().decode('utf-8')
+        if exit_status != 0:
+            error_output = stderr.read().decode('utf-8')
+            print(f"Remote script error: {error_output}")
+            raise HTTPException(status_code=500, detail=f"Failed to execute try-on script on remote server. Error: {error_output}")
 
-            print(f"Script stdout:\\n{stdout_output}")
-            print(f"Script stderr:\\n{stderr_output}")
+        print("Successfully executed try-on script.")
+        
+        # Assuming the output is saved to a known location, e.g., 'output.jpg' in remote_path
+        # For simplicity, we are not downloading the result in this example.
+        # This part should be implemented based on the actual script's behavior.
 
-            if exit_status != 0:
-                raise HTTPException(status_code=500, detail=f"Error executing script on remote server: {stderr_output}")
+        # For now, return a placeholder or a URL to the result if known.
+        return {"message": "Try-on process initiated successfully. Result will be available at a predefined location.", "status": "success"}
 
-            # Find the newest file in the output directory
-            find_latest_file_cmd = f"ls -t {remote_output_dir} | head -n 1"
-            stdin, stdout, stderr = ssh_client.exec_command(find_latest_file_cmd)
-            latest_filename = stdout.read().decode('utf-8').strip()
-
-            if not latest_filename:
-                raise HTTPException(status_code=404, detail="No output image found in the remote directory.")
-
-            output_image_path = posixpath.join(remote_output_dir, latest_filename)
-            print(f"Found latest output file: {output_image_path}")
-
-            # Download the output image
-            with ssh_client.open_sftp() as sftp_client:
-                with sftp_client.file(output_image_path, "rb") as f:
-                    output_image_data = f.read()
-
-            # Encode image to base64
-            encoded_image = base64.b64encode(output_image_data).decode('utf-8')
-            base64_image_str = f"data:image/png;base64,{encoded_image}"
-
-        return {"message": "Virtual try-on process completed successfully.", "output_image": base64_image_str}
-
-    except httpx.HTTPStatusError as e:
-        raise HTTPException(status_code=400, detail=f"Failed to download image from URL: {e}")
     except Exception as e:
-        print(f"Error during try-on process: {e}")
+        print(f"Error during try-on: {e}")
         import traceback
         traceback.print_exc()
-        if isinstance(e, HTTPException):
-            raise e
         raise HTTPException(status_code=500, detail=f"An unexpected error occurred during the try-on process: {str(e)}")
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    # Render will set the PORT environment variable.
+    port = int(os.getenv("PORT", 8000))
+    # We use 0.0.0.0 to make it accessible from outside the container.
+    uvicorn.run(app, host="0.0.0.0", port=port)
