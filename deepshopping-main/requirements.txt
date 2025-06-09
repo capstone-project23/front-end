@@ -22,7 +22,7 @@ uvicorn
 httpx
 python-dotenv
 python-multipart
-opencv-python
+opencv-python-headless
 dlib
 tensorflow-cpu
 ipython
