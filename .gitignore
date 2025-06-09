@@ -1,0 +1,25 @@
+# Dependencies
+/node_modules
+/deepshopping-main/frontend/node_modules
+
+# Build output
+/deepshopping-main/frontend/build
+
+# Large data files
+/deepshopping-main/toil/personal color predict/shape_predictor_68_face_landmarks.dat
+
+# Environment variables
+.env
+
+# OS-specific
+.DS_Store
+
+# IDE settings
+.vscode
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Eggs
+/deepshopping-main/toil.egg-info 
