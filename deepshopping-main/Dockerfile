@@ -7,6 +7,7 @@ WORKDIR /app
 # Install system dependencies required for dlib and opencv-python
 # This is crucial to avoid compilation errors inside the container
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
     cmake \
     g++ \
     libgl1-mesa-glx \
