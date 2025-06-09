@@ -248,64 +248,72 @@ class TryOnRequest(BaseModel):
 @app.post("/api/try-on")
 async def try_on(request: TryOnRequest):
     try:
-        # 1. Download the image from the URL
-        async with httpx.AsyncClient() as client:
-            response = await client.get(request.image_url)
-            response.raise_for_status()
-            image_bytes = response.content
-
-        # 2. Upload to remote server
         remote_host = os.getenv("REMOTE_SERVER_HOST")
         remote_port = int(os.getenv("REMOTE_SERVER_PORT", 22))
         remote_user = os.getenv("REMOTE_SERVER_USER")
         remote_pass = os.getenv("REMOTE_SERVER_PASS")
         remote_path = os.getenv("REMOTE_SERVER_DEST_PATH")
-        remote_script_path = os.getenv("REMOTE_SCRIPT_PATH")
 
-        if not all([remote_host, remote_user, remote_pass, remote_path, remote_script_path]):
-            raise HTTPException(status_code=500, detail="Remote server try-on configuration is missing.")
+        if not all([remote_host, remote_user, remote_pass, remote_path]):
+            raise HTTPException(status_code=500, detail="Remote server credentials not configured")
 
         ssh_client = paramiko.SSHClient()
         ssh_client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
         ssh_client.connect(hostname=remote_host, port=remote_port, username=remote_user, password=remote_pass)
 
-        # Upload the image
-        sftp_client = ssh_client.open_sftp()
-        remote_image_path = posixpath.join(remote_path, "garment.jpg")
-        sftp_client.putfo(BytesIO(image_bytes), remote_image_path)
-        sftp_client.close()
+        # Ensure the remote directory exists
+        sftp = ssh_client.open_sftp()
+        try:
+            sftp.stat(remote_path)
+        except FileNotFoundError:
+            sftp.mkdir(remote_path)
+        
+        # Download the image from URL
+        async with httpx.AsyncClient() as client:
+            response = await client.get(request.image_url)
+            response.raise_for_status()
+            image_data = response.content
 
-        # Run the try-on script
-        stdin, stdout, stderr = ssh_client.exec_command(f"python3 {remote_script_path}")
+        # Upload the image to the remote server
+        remote_file_path = posixpath.join(remote_path, "garment.jpg")
+        with sftp.file(remote_file_path, "wb") as remote_file:
+            remote_file.write(image_data)
+        
+        # Execute the try-on script
+        # Note: This is a blocking call. Consider running it in a thread for real applications.
+        stdin, stdout, stderr = ssh_client.exec_command(f"python3 {posixpath.join(remote_path, 'my_tryon.py')}")
         
         # Wait for the command to complete
         exit_status = stdout.channel.recv_exit_status()
         
-        ssh_client.close()
-
-        if exit_status != 0:
-            error_output = stderr.read().decode('utf-8')
-            print(f"Remote script error: {error_output}")
-            raise HTTPException(status_code=500, detail=f"Failed to execute try-on script on remote server. Error: {error_output}")
-
-        print("Successfully executed try-on script.")
-        
-        # Assuming the output is saved to a known location, e.g., 'output.jpg' in remote_path
-        # For simplicity, we are not downloading the result in this example.
-        # This part should be implemented based on the actual script's behavior.
-
-        # For now, return a placeholder or a URL to the result if known.
-        return {"message": "Try-on process initiated successfully. Result will be available at a predefined location.", "status": "success"}
+        if exit_status == 0:
+            # If successful, read the resulting image
+            result_image_path = posixpath.join(remote_path, "result.jpg")
+            with sftp.file(result_image_path, "rb") as remote_file:
+                result_image_data = remote_file.read()
+            
+            # Encode image to base64 to send in JSON response
+            encoded_image = base64.b64encode(result_image_data).decode("utf-8")
+            
+            sftp.close()
+            ssh_client.close()
+            
+            return {"result_image": encoded_image}
+        else:
+            # If the script fails, return an error
+            error_message = stderr.read().decode()
+            sftp.close()
+            ssh_client.close()
+            raise HTTPException(status_code=500, detail=f"Try-on script failed: {error_message}")
 
     except Exception as e:
-        print(f"Error during try-on: {e}")
         import traceback
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"An unexpected error occurred during the try-on process: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"An error occurred during the try-on process: {str(e)}")
 
 if __name__ == "__main__":
     import uvicorn
-    # Render will set the PORT environment variable.
+    # Render provides the PORT environment variable. Default to 8000 for local development.
     port = int(os.getenv("PORT", 8000))
-    # We use 0.0.0.0 to make it accessible from outside the container.
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    # Uvicorn should listen on 0.0.0.0 to be accessible from outside the container.
+    uvicorn.run("api.main:app", host="0.0.0.0", port=port, reload=False)
