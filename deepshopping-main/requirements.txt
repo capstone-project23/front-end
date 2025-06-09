@@ -21,9 +21,9 @@ fastapi
 uvicorn
 httpx
 python-dotenv
-python-multipart 
+python-multipart
 opencv-python
 dlib
 tensorflow
 ipython
-scikit-learn
+scikit-learn 
