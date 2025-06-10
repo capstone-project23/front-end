@@ -500,7 +500,12 @@ function RecommendationForm() {
             <img
               src={`data:image/png;base64,${tryOnResultImage}`}
               alt="Try-on Result"
-              style={{ maxWidth: "100%", height: "auto" }}
+              style={{
+                maxWidth: "80vw",
+                maxHeight: "80vh",
+                width: "auto",
+                height: "auto",
+              }}
             />
           )}
         </Box>
