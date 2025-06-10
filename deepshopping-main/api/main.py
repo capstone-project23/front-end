@@ -279,16 +279,28 @@ async def try_on(request: TryOnRequest):
         with sftp.file(remote_file_path, "wb") as remote_file:
             remote_file.write(image_data)
         
-        # Execute the try-on script
+        # Execute the try-on script using the specific python from the virtual environment
         # Note: This is a blocking call. Consider running it in a thread for real applications.
-        stdin, stdout, stderr = ssh_client.exec_command(f"python3 {posixpath.join(remote_path, 'my_tryon.py')}")
+        command_to_run = f"/mnt/ssd/fashionImage/comfyenv/bin/python /mnt/ssd/fashionImage/catvton_workflow_runner.py --model-image 'model.jpg' --top-image 'garment.jpg'"
+        stdin, stdout, stderr = ssh_client.exec_command(command_to_run)
         
         # Wait for the command to complete
         exit_status = stdout.channel.recv_exit_status()
         
         if exit_status == 0:
-            # If successful, read the resulting image
-            result_image_path = posixpath.join(remote_path, "result.jpg")
+            # If successful, read the resulting image from the correct output directory
+            output_dir = "/mnt/ssd/fashionImage/ComfyUI/output/"
+            
+            # Find the first .png file in the output directory
+            file_list = sftp.listdir(output_dir)
+            output_png_files = [f for f in file_list if f.endswith('.png')]
+
+            if not output_png_files:
+                 raise HTTPException(status_code=404, detail="Try-on script ran, but no output PNG was found.")
+
+            # Assume the first png file is the result
+            result_image_path = posixpath.join(output_dir, output_png_files[0])
+
             with sftp.file(result_image_path, "rb") as remote_file:
                 result_image_data = remote_file.read()
             
@@ -298,7 +310,7 @@ async def try_on(request: TryOnRequest):
             sftp.close()
             ssh_client.close()
             
-            return {"result_image": encoded_image}
+            return {"output_image": encoded_image}
         else:
             # If the script fails, return an error
             error_message = stderr.read().decode()

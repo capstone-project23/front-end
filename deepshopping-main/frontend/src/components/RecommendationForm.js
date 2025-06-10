@@ -482,38 +482,27 @@ function RecommendationForm() {
         onClose={handleCloseTryOnModal}
         aria-labelledby="try-on-result-modal-title"
       >
-        <Box sx={{
-          position: 'absolute',
-          top: '50%',
-          left: '50%',
-          transform: 'translate(-50%, -50%)',
-          width: 400,
-          bgcolor: 'background.paper',
-          border: '2px solid #000',
-          boxShadow: 24,
-          p: 4,
-          textAlign: 'center',
-        }}>
-          <Typography id="try-on-result-modal-title" variant="h6" component="h2">
+        <Box
+          sx={{
+            position: "absolute",
+            top: "50%",
+            left: "50%",
+            transform: "translate(-50%, -50%)",
+            bgcolor: "background.paper",
+            boxShadow: 24,
+            p: 4,
+          }}
+        >
+          <Typography variant="h6" component="h2" sx={{ mb: 2 }}>
             가상 피팅 결과
           </Typography>
           {tryOnResultImage && (
-            <Box
-              component="img"
-              src={tryOnResultImage}
-              alt="Virtual try-on result"
-              sx={{
-                mt: 2,
-                mb: 2,
-                maxHeight: 500,
-                maxWidth: '100%',
-                display: 'block',
-                marginLeft: 'auto',
-                marginRight: 'auto',
-              }}
+            <img
+              src={`data:image/png;base64,${tryOnResultImage}`}
+              alt="Try-on Result"
+              style={{ maxWidth: "100%", height: "auto" }}
             />
           )}
-          <Button onClick={handleCloseTryOnModal}>닫기</Button>
         </Box>
       </Modal>
 
