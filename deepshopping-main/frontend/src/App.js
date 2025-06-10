@@ -30,7 +30,7 @@ function SearchPage() {
     setError(null);
 
     try {
-      const response = await axios.post("https://3678-220-120-112-2.ngrok-free.app/api/search", {
+      const response = await axios.post("https://capable-gull-hugely.ngrok-free.app/api/search", {
         query: query,
         max_results: 5,
       });

@@ -106,7 +106,7 @@ function RecommendationForm() {
 
     try {
       const response = await axios.post(
-        "https://3678-220-120-112-2.ngrok-free.app/api/analyze-image",
+        "https://capable-gull-hugely.ngrok-free.app/api/analyze-image",
         formData,
         {
           headers: {
@@ -171,7 +171,7 @@ function RecommendationForm() {
     }
 
     try {
-      const response = await axios.post("https://3678-220-120-112-2.ngrok-free.app/api/recommend", {
+      const response = await axios.post("https://capable-gull-hugely.ngrok-free.app/api/recommend", {
         user_info: formattedUserInfo,
         query_text: queryText,
       });
@@ -223,7 +223,7 @@ function RecommendationForm() {
     setTryOnLoading(index);
     setTryOnResultImage(null);
     try {
-      const response = await axios.post("https://3678-220-120-112-2.ngrok-free.app/api/try-on", {
+      const response = await axios.post("https://capable-gull-hugely.ngrok-free.app/api/try-on", {
         image_url: imageUrl,
       });
       alert("가상 피팅이 완료되었습니다!");
