@@ -455,14 +455,23 @@ function RecommendationForm() {
                               원
                             </Typography>
                           </CardContent>
-                          <CardActions sx={{ justifyContent: "center" }}>
+                          <CardActions sx={{ justifyContent: "center", gap: 1 }}>
                             <Button
                               size="small"
-                              variant="contained"
+                              variant="outlined"
                               onClick={() => handleTryOn(product.imageUrl, index)}
                               disabled={tryOnLoading === index}
                             >
                               {tryOnLoading === index ? <CircularProgress size={20} /> : "입어보기"}
+                            </Button>
+                            <Button
+                              size="small"
+                              variant="contained"
+                              href={product.link}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                            >
+                              보러가기
                             </Button>
                           </CardActions>
                         </Card>
