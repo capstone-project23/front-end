@@ -6,6 +6,7 @@ import paramiko
 import posixpath
 import httpx
 import base64
+import importlib.util
 from io import BytesIO
 
 # Add the project root to Python path
@@ -22,9 +23,20 @@ from dotenv import load_dotenv
 from typing import Any, Dict, List
 
 from toil.utils import get_deepsearch
-# Corrected imports to load directly from the modified sys.path
-from skincolor import predict_personal_color
-from bodyshape import predict_body_shape
+
+# Import modules from directory with space in name using importlib
+skincolor_path = os.path.join(predict_module_path, "skincolor.py")
+bodyshape_path = os.path.join(predict_module_path, "bodyshape.py")
+
+spec_skincolor = importlib.util.spec_from_file_location("skincolor", skincolor_path)
+skincolor = importlib.util.module_from_spec(spec_skincolor)
+spec_skincolor.loader.exec_module(skincolor)
+predict_personal_color = skincolor.predict_personal_color
+
+spec_bodyshape = importlib.util.spec_from_file_location("bodyshape", bodyshape_path)
+bodyshape = importlib.util.module_from_spec(spec_bodyshape)
+spec_bodyshape.loader.exec_module(bodyshape)
+predict_body_shape = bodyshape.predict_body_shape
 
 # Load environment variables from .env file
 # load_dotenv() # 기본 호출 대신 아래 경로 명시적 호출 사용
@@ -281,7 +293,7 @@ async def try_on(request: TryOnRequest):
         
         # Execute the try-on script using the specific python from the virtual environment
         # Note: This is a blocking call. Consider running it in a thread for real applications.
-        command_to_run = f"/mnt/ssd/fashionImage/comfyenv/bin/python /mnt/ssd/fashionImage/catvton_workflow_runner.py --model-image 'model.jpg' --top-image 'garment.jpg'"
+        command_to_run = f"/mnt/ssd/fashion/ComfyUI_windows_portable_nvidia_cu121_or_cpu/ComfyUI_windows_portable/comfyenv/bin/python /mnt/ssd/fashion/ComfyUI_windows_portable_nvidia_cu121_or_cpu/ComfyUI_windows_portable/catvton_workflow_runner.py --model-image 'model.jpg' --top-image 'garment.jpg'"
         stdin, stdout, stderr = ssh_client.exec_command(command_to_run)
         
         # Wait for the command to complete
@@ -289,7 +301,7 @@ async def try_on(request: TryOnRequest):
         
         if exit_status == 0:
             # If successful, read the resulting image from the correct output directory
-            output_dir = "/mnt/ssd/fashionImage/ComfyUI/output/"
+            output_dir = "/mnt/ssd/fashion/ComfyUI_windows_portable_nvidia_cu121_or_cpu/ComfyUI_windows_portable/ComfyUI/output/"
             
             # Find the first .png file in the output directory
             file_list = sftp.listdir(output_dir)
@@ -328,4 +340,5 @@ if __name__ == "__main__":
     # Render provides the PORT environment variable. Default to 8000 for local development.
     port = int(os.getenv("PORT", 8000))
     # Uvicorn should listen on 0.0.0.0 to be accessible from outside the container.
-    uvicorn.run("api.main:app", host="0.0.0.0", port=port, reload=False)
+    # Use app directly instead of string reference to avoid module import issues
+    uvicorn.run(app, host="0.0.0.0", port=port, reload=False)
