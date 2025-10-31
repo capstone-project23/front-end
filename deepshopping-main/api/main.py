@@ -217,24 +217,45 @@ async def recommend(request: RecommendationRequest):
         # agent.astream_events(...) 호출 결과를 await으로 받아야 함
         event_stream = await agent.astream_events(request.query_text, stream_mode=["values", "events"], version="v2")
         
-        async for event in event_stream: # await으로 얻은 event_stream을 사용
-            if event.get("event") == "on_chat_model_stream":
-                content = event.get("data", {}).get("chunk", {}).content
-                if content and "answer" in event.get("tags", []):
-                    accumulated_answer += content
-            # 다른 필요한 이벤트 처리 (예: on_tool_end 에서 데이터 수집 등)는 여기에 추가 가능
+        try:
+            async for event in event_stream: # await으로 얻은 event_stream을 사용
+                if event.get("event") == "on_chat_model_stream":
+                    content = event.get("data", {}).get("chunk", {}).content
+                    if content and "answer" in event.get("tags", []):
+                        accumulated_answer += content
+                # 다른 필요한 이벤트 처리 (예: on_tool_end 에서 데이터 수집 등)는 여기에 추가 가능
+        except (KeyError, Exception) as stream_error:
+            # 도구 실행 오류나 KeyError 발생 시 로그 남기고 계속 진행
+            print(f"Warning: Error during event stream processing: {stream_error}")
+            print("Continuing with available data...")
+            # 스트림 처리 중 오류가 발생해도 이미 수집된 데이터로 응답 생성 시도
 
         # 모든 이벤트 스트림 처리 후, 최종 상태에서 정보 가져오기
-        agent_state_dump = agent.dump()
-        final_report_str = agent_state_dump.get("final_report", "보고서를 생성하지 못했습니다.")
+        try:
+            agent_state_dump = agent.dump()
+            final_report_str = agent_state_dump.get("final_report", "보고서를 생성하지 못했습니다.")
+        except Exception as dump_error:
+            print(f"Warning: Error getting agent state dump: {dump_error}")
+            final_report_str = "보고서를 생성하지 못했습니다."
         
         final_answer_text = accumulated_answer if accumulated_answer else final_report_str
         if accumulated_answer:
-            final_answer_text, _ = agent.format_reference(accumulated_answer, "<sup>[[{number}]]({link})</sup>")
+            try:
+                final_answer_text, _ = agent.format_reference(accumulated_answer, "<sup>[[{number}]]({link})</sup>")
+            except Exception as ref_error:
+                print(f"Warning: Error formatting references: {ref_error}")
+                # 참조 포맷팅 실패 시 원본 텍스트 사용
+                final_answer_text = accumulated_answer
         
         # Get both markdown and raw JSON recommendations
-        formatted_product_recommendations = agent.get_formatted_recommendations()
-        product_recommendations_json = agent.get_product_recommendations()
+        try:
+            formatted_product_recommendations = agent.get_formatted_recommendations()
+            product_recommendations_json = agent.get_product_recommendations()
+        except Exception as rec_error:
+            print(f"Warning: Error getting product recommendations: {rec_error}")
+            # 추천 정보를 가져오지 못한 경우 빈 리스트 반환
+            formatted_product_recommendations = ""
+            product_recommendations_json = []
 
         api_response = {
             "recommendation_text": final_answer_text,
