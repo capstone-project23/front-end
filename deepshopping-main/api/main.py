@@ -215,20 +215,38 @@ async def recommend(request: RecommendationRequest):
         # 하지만 여기서는 노트북과 유사하게 이벤트 기반으로 처리하여 "answer" 태그를 활용
         
         # agent.astream_events(...) 호출 결과를 await으로 받아야 함
-        event_stream = await agent.astream_events(request.query_text, stream_mode=["values", "events"], version="v2")
-        
+        event_stream = None
         try:
-            async for event in event_stream: # await으로 얻은 event_stream을 사용
-                if event.get("event") == "on_chat_model_stream":
-                    content = event.get("data", {}).get("chunk", {}).content
-                    if content and "answer" in event.get("tags", []):
-                        accumulated_answer += content
-                # 다른 필요한 이벤트 처리 (예: on_tool_end 에서 데이터 수집 등)는 여기에 추가 가능
-        except (KeyError, Exception) as stream_error:
-            # 도구 실행 오류나 KeyError 발생 시 로그 남기고 계속 진행
-            print(f"Warning: Error during event stream processing: {stream_error}")
-            print("Continuing with available data...")
-            # 스트림 처리 중 오류가 발생해도 이미 수집된 데이터로 응답 생성 시도
+            event_stream = await agent.astream_events(request.query_text, stream_mode=["values", "events"], version="v2")
+        except Exception as stream_init_error:
+            # 이벤트 스트림 생성 실패 시 (예: Gemini API 오류)
+            error_msg = str(stream_init_error)
+            if "Gemini" in error_msg or "parts field" in error_msg or "Invalid argument" in error_msg:
+                print(f"Warning: Gemini API error during stream initialization: {stream_init_error}")
+                print("This may be due to empty messages or invalid input format.")
+            else:
+                print(f"Warning: Error initializing event stream: {stream_init_error}")
+            # event_stream을 None으로 설정하여 루프를 건너뛰도록 함
+            event_stream = None
+        
+        if event_stream is not None:
+            try:
+                async for event in event_stream: # await으로 얻은 event_stream을 사용
+                    if event.get("event") == "on_chat_model_stream":
+                        content = event.get("data", {}).get("chunk", {}).content
+                        if content and "answer" in event.get("tags", []):
+                            accumulated_answer += content
+                    # 다른 필요한 이벤트 처리 (예: on_tool_end 에서 데이터 수집 등)는 여기에 추가 가능
+            except (KeyError, Exception) as stream_error:
+                # 도구 실행 오류나 KeyError 발생 시 로그 남기고 계속 진행
+                error_msg = str(stream_error)
+                if "Gemini" in error_msg or "parts field" in error_msg or "Invalid argument" in error_msg:
+                    print(f"Warning: Gemini API error during event stream processing: {stream_error}")
+                    print("This may be due to empty messages or invalid input format. Continuing with available data...")
+                else:
+                    print(f"Warning: Error during event stream processing: {stream_error}")
+                    print("Continuing with available data...")
+                # 스트림 처리 중 오류가 발생해도 이미 수집된 데이터로 응답 생성 시도
 
         # 모든 이벤트 스트림 처리 후, 최종 상태에서 정보 가져오기
         try:
